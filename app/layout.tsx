@@ -6,8 +6,8 @@ import { Toaster } from "@/components/ui/toaster";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "TikTok Video Downloader",
-  description: "Download TikTok videos without watermark",
+  title: "Video Downloader",
+  description: "Download videos from TikTok, X.com and more",
 };
 
 export default function RootLayout({

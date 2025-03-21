@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Download, X, Share2, Save } from "lucide-react";
+import PlatformIcons from "@/components/PlatformIcons";
 
 // Define interface for history items
 interface DownloadHistoryItem {
@@ -33,10 +34,10 @@ export default function VideoDownloader() {
   }, []);
 
   const handleDownload = async () => {
-    if (!url) {
+    if (!url || !isValidUrl(url)) {
       toast({
         title: "Error",
-        description: "Please enter a valid video URL",
+        description: "Please enter a valid TikTok or X.com video URL",
         variant: "destructive",
       });
       return;
@@ -230,6 +231,15 @@ export default function VideoDownloader() {
     });
   };
 
+  // Add URL validation
+  const isValidUrl = (url: string) => {
+    return (
+      url.includes("tiktok.com") ||
+      url.includes("x.com") ||
+      url.includes("twitter.com")
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4 w-full max-w-lg mx-auto">
       {/* Input and Download Button */}
@@ -238,7 +248,7 @@ export default function VideoDownloader() {
           <Input
             type="url"
             inputMode="url"
-            placeholder="Paste TikTok URL"
+            placeholder="Paste video URL (TikTok, X.com)"
             value={url}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setUrl(e.target.value)
@@ -268,6 +278,9 @@ export default function VideoDownloader() {
           )}
         </Button>
       </div>
+
+      {/* Platform Icons */}
+      <PlatformIcons />
 
       {/* Video Player */}
       {videoUrl && (

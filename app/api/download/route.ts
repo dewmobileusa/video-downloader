@@ -12,6 +12,57 @@ export async function POST(request: Request) {
       )
     }
 
+    // Check if it's an X.com/Twitter URL
+    const isTwitterUrl = body.url.includes('x.com') || body.url.includes('twitter.com');
+    
+    if (isTwitterUrl) {
+      const options = {
+        method: 'POST',
+        url: 'https://all-video-downloader1.p.rapidapi.com/all',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-RapidAPI-Key': process.env.RAPID_API_KEY,
+          'X-RapidAPI-Host': 'all-video-downloader1.p.rapidapi.com'
+        },
+        data: new URLSearchParams({
+          url: body.url
+        }).toString()
+      };
+
+      const { data: result } = await axios.request(options);
+      
+      // Log the response for debugging
+      console.log('API Response:', JSON.stringify(result, null, 2));
+
+      if (!result?.url) {
+        throw new Error('Could not extract video URL');
+      }
+
+      const videoUrl = result.url;
+
+      // Handle direct download for mobile
+      if (body.direct) {
+        const videoResponse = await axios.get(videoUrl, {
+          responseType: 'arraybuffer'
+        });
+
+        const headers = new Headers();
+        headers.set('Content-Type', 'video/mp4');
+        headers.set('Content-Disposition', `attachment; filename="${body.filename || `video-${Date.now()}.mp4`}"`);
+
+        return new NextResponse(videoResponse.data, {
+          status: 200,
+          headers,
+        });
+      }
+
+      return NextResponse.json({
+        url: videoUrl,
+        filename: `video-${Date.now()}.mp4`
+      });
+    }
+
+    // Existing TikTok handling
     const options = {
       method: 'GET',
       url: 'https://tiktok-video-no-watermark2.p.rapidapi.com/',
@@ -50,9 +101,9 @@ export async function POST(request: Request) {
       filename: `tiktok-${Date.now()}.mp4`
     })
   } catch (error) {
-    console.error('TikTok download error:', error)
+    console.error('Video download error:', error)
     return NextResponse.json(
-      { error: 'Failed to download TikTok video' },
+      { error: 'Failed to download video' },
       { status: 500 }
     )
   }

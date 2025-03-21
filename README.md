@@ -1,9 +1,10 @@
-# TikTok Video Downloader
+# Video Downloader
 
-A web application to download and preview TikTok videos without watermark.
+A web application to download and preview videos from various social media platforms.
 
 ## Features
 - Download TikTok videos without watermark
+- Download X.com (Twitter) videos
 - Preview video before downloading
 - Download history with timestamps
 - Responsive design for mobile and desktop
