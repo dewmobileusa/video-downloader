@@ -1,8 +1,18 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import { NextResponse } from 'next/server'
 import axios from 'axios'
 
 export async function POST(request: Request) {
   try {
+    if (!process.env.RAPID_API_KEY) {
+      console.error('RAPID_API_KEY is not configured in environment variables');
+      return NextResponse.json(
+        { error: 'Server configuration error: API key not found' },
+        { status: 500 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}))
     
     if (!body?.url) {
