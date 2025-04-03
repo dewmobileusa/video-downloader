@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Download, X, Share2, Save } from "lucide-react";
-import PlatformIcons from "@/components/PlatformIcons";
+import { Download, X, Share2, Save, Link, Settings } from "lucide-react";
 
 // Define interface for history items
 interface DownloadHistoryItem {
@@ -28,6 +27,10 @@ export default function VideoDownloader() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
   const isAndroid = /Android/i.test(navigator.userAgent);
+  const [apiProvider, setApiProvider] = useState<"primary" | "secondary">(
+    "primary"
+  );
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     setDownloadHistory(getDownloadHistory());
@@ -47,7 +50,7 @@ export default function VideoDownloader() {
     try {
       // Detect mobile devices
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const filename = `tiktok-${Date.now()}.mp4`;
+      const filename = `video-${Date.now()}.mp4`;
 
       const response = await fetch("/api/download", {
         method: "POST",
@@ -56,18 +59,22 @@ export default function VideoDownloader() {
         },
         body: JSON.stringify({
           url,
-          direct: isMobile, // Use direct download for both iOS and Android
+          direct: isMobile, // Use direct download for mobile
           filename,
+          apiProvider,
         }),
       });
 
       if (!response.ok) throw new Error("Download failed");
 
+      let videoUrl, musicUrl, musicFilename;
+
       if (isMobile) {
+        // Mobile handling - direct video download
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
 
-        if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+        if (isIOS) {
           // For iOS: Show video in a modal/overlay with native controls
           setVideoUrl(blobUrl);
           toast({
@@ -83,53 +90,120 @@ export default function VideoDownloader() {
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
+
+          toast({
+            title: "Download Complete",
+            description: "Video has been downloaded",
+          });
         }
 
-        // Clean up blob URL after a delay
-        setTimeout(() => {
-          if (!/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-            window.URL.revokeObjectURL(blobUrl);
+        // Get audio URL if available for optional download
+        try {
+          const infoResponse = await fetch("/api/video-info", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url,
+              apiProvider,
+            }),
+          });
+
+          if (infoResponse.ok) {
+            const infoData = await infoResponse.json();
+            musicUrl = infoData.musicUrl;
+            musicFilename = infoData.musicFilename;
+
+            // Log the audio URL for mobile
+            if (musicUrl) {
+              console.log("Mobile - Audio download URL:", musicUrl);
+            } else {
+              console.log("Mobile - No audio file available");
+            }
           }
-        }, 100);
+        } catch (error) {
+          console.error("Error fetching audio info:", error);
+        }
       } else {
-        // Desktop handling remains the same
-        const { url: videoUrl } = await response.json();
-        setVideoUrl(videoUrl);
+        // Desktop handling
+        const responseData = await response.json();
+        videoUrl = responseData.url;
+        musicUrl = responseData.musicUrl;
+        const videoFilename = responseData.filename;
+        musicFilename = responseData.musicFilename;
 
-        const videoResponse = await fetch(videoUrl);
-        const blob = await videoResponse.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
+        // Log the URLs
+        console.log("Video download URL:", videoUrl);
+        if (musicUrl) {
+          console.log("Audio download URL:", musicUrl);
+        } else {
+          console.log("No audio file available");
+        }
 
-        const link = document.createElement("a");
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+        // Download video first and complete it
+        try {
+          const videoResponse = await fetch(videoUrl);
+          const videoBlob = await videoResponse.blob();
+          const videoBlobUrl = window.URL.createObjectURL(videoBlob);
 
-        window.URL.revokeObjectURL(blobUrl);
+          // Set the video URL to show the player
+          setVideoUrl(videoBlobUrl);
+
+          // Also create a download link
+          const videoLink = document.createElement("a");
+          videoLink.href = videoBlobUrl;
+          videoLink.download = videoFilename;
+          document.body.appendChild(videoLink);
+          videoLink.click();
+          document.body.removeChild(videoLink);
+
+          // Clean up blob URL when video player is closed
+          // This now happens in the X button click handler
+
+          toast({
+            title: "Download Complete",
+            description: "Video has been downloaded and is ready to play",
+          });
+
+          // Add to download history
+          const historyItem: DownloadHistoryItem = {
+            id: Date.now(),
+            url,
+            filename: videoFilename,
+            downloadedAt: new Date().toISOString(),
+          };
+
+          const history = JSON.parse(
+            localStorage.getItem("downloadHistory") || "[]"
+          );
+
+          const newHistory = [historyItem, ...history];
+          localStorage.setItem("downloadHistory", JSON.stringify(newHistory));
+          setDownloadHistory(newHistory);
+
+          // Only after video is downloaded, check for audio
+          if (musicUrl) {
+            // Use setTimeout to ensure this happens after the video download completes
+            setTimeout(() => {
+              const shouldDownloadAudio = window.confirm(
+                "Audio file is also available. Would you like to download it?"
+              );
+
+              if (shouldDownloadAudio) {
+                handleAudioDownload(musicUrl, musicFilename);
+              }
+            }, 1500); // Increase from 500ms to 1500ms
+          }
+        } catch (error) {
+          console.error("Video download error:", error);
+          toast({
+            title: "Error",
+            description: "Failed to download video",
+            variant: "destructive",
+          });
+        }
       }
-
-      // Save to history with filename
-      const historyItem: DownloadHistoryItem = {
-        id: Date.now(),
-        url,
-        filename,
-        downloadedAt: new Date().toISOString(),
-      };
-
-      const history = JSON.parse(
-        localStorage.getItem("downloadHistory") || "[]"
-      );
-
-      const newHistory = [historyItem, ...history];
-      localStorage.setItem("downloadHistory", JSON.stringify(newHistory));
-      setDownloadHistory(newHistory);
-
-      toast({
-        title: "Success",
-        description: "Video downloaded successfully!",
-      });
     } catch (error) {
       console.error("Download error:", error);
       toast({
@@ -139,6 +213,55 @@ export default function VideoDownloader() {
       });
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const handleAudioDownload = async (
+    audioUrl: string,
+    audioFilename: string | null
+  ) => {
+    console.log("Starting audio download from:", audioUrl);
+
+    // Skip m3u8 files entirely (Twitter audio streams)
+    if (audioUrl.includes(".m3u8")) {
+      toast({
+        title: "Audio Not Available",
+        description:
+          "Direct audio download is not supported for this video format",
+        duration: 5000,
+      });
+      return;
+    }
+
+    // Regular direct download for TikTok audio files
+    try {
+      const musicResponse = await fetch(audioUrl);
+      const musicBlob = await musicResponse.blob();
+      const musicBlobUrl = window.URL.createObjectURL(musicBlob);
+
+      const musicLink = document.createElement("a");
+      musicLink.href = musicBlobUrl;
+      musicLink.download = audioFilename || `audio-${Date.now()}.mp3`;
+      document.body.appendChild(musicLink);
+      musicLink.click();
+      document.body.removeChild(musicLink);
+
+      // Clean up blob URL
+      setTimeout(() => {
+        window.URL.revokeObjectURL(musicBlobUrl);
+      }, 100);
+
+      toast({
+        title: "Audio Downloaded",
+        description: "Audio file has been downloaded",
+      });
+    } catch (error) {
+      console.error("Failed to download audio:", error);
+      toast({
+        title: "Audio Download Failed",
+        description: "Could not download the audio file",
+        variant: "destructive",
+      });
     }
   };
 
@@ -240,11 +363,26 @@ export default function VideoDownloader() {
     );
   };
 
+  // Add a function to clear the URL input
+  const clearUrl = () => {
+    setUrl("");
+  };
+
+  // Add toggle settings function
+  const toggleSettings = () => {
+    setShowSettings(!showSettings);
+  };
+
   return (
     <div className="flex flex-col gap-4 w-full max-w-lg mx-auto">
-      {/* Input and Download Button */}
+      {/* Input, Settings toggle, and Download Button */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1">
+        <div className="flex-1 relative">
+          {/* Link icon on the left */}
+          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+            <Link className="h-4 w-4" />
+          </div>
+
           <Input
             type="url"
             inputMode="url"
@@ -253,34 +391,89 @@ export default function VideoDownloader() {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               setUrl(e.target.value)
             }
-            className="w-full text-[16px] leading-[1.25] py-2"
+            className="w-full text-[16px] leading-[1.25] py-2 pl-9 pr-8"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck="false"
           />
-        </div>
-        <Button
-          onClick={handleDownload}
-          disabled={isDownloading}
-          className="w-full sm:w-auto whitespace-nowrap"
-        >
-          {isDownloading ? (
-            <>
-              <span className="animate-spin mr-2">⏳</span>
-              Downloading...
-            </>
-          ) : (
-            <>
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </>
+
+          {/* X button to clear input - only shows when there's text */}
+          {url && (
+            <button
+              type="button"
+              onClick={clearUrl}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
           )}
-        </Button>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={toggleSettings}
+            className="flex-shrink-0"
+            title="Download Settings"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+          <Button
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="w-full sm:w-auto whitespace-nowrap"
+          >
+            {isDownloading ? (
+              <>
+                <span className="animate-spin mr-2">⏳</span>
+                Downloading...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* Platform Icons */}
-      <PlatformIcons />
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="bg-gray-50 p-3 rounded-lg border mb-2">
+          <h3 className="font-medium mb-2 text-sm">Download Settings</h3>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center">
+              <input
+                type="radio"
+                id="api-primary"
+                name="api-provider"
+                checked={apiProvider === "primary"}
+                onChange={() => setApiProvider("primary")}
+                className="mr-2"
+              />
+              <label htmlFor="api-primary" className="text-sm">
+                Primary API (Recommended)
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                type="radio"
+                id="api-secondary"
+                name="api-provider"
+                checked={apiProvider === "secondary"}
+                onChange={() => setApiProvider("secondary")}
+                className="mr-2"
+              />
+              <label htmlFor="api-secondary" className="text-sm">
+                Secondary API (Fallback)
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Video Player */}
       {videoUrl && (
@@ -374,11 +567,15 @@ export default function VideoDownloader() {
             {downloadHistory.map((item) => (
               <li
                 key={item.id}
-                className="p-2 bg-gray-100 rounded flex justify-between items-start"
+                className="p-3 bg-gray-100 rounded flex justify-between items-start"
               >
-                <div>
-                  <p className="font-medium">{item.url}</p>
-                  <p className="text-sm text-gray-600">{item.filename}</p>
+                <div className="flex-1 pr-3 overflow-hidden">
+                  <p className="font-medium text-sm break-all line-clamp-2">
+                    {item.url}
+                  </p>
+                  <p className="text-sm text-gray-600 truncate">
+                    {item.filename}
+                  </p>
                   <p className="text-sm text-gray-500">
                     {new Date(item.downloadedAt).toLocaleString()}
                   </p>
@@ -386,7 +583,7 @@ export default function VideoDownloader() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-gray-500 hover:text-red-500"
+                  className="text-gray-500 hover:text-red-500 flex-shrink-0"
                   onClick={() => {
                     const newHistory = downloadHistory.filter(
                       (h) => h.id !== item.id
